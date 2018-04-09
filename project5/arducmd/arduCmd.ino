@@ -9,29 +9,38 @@
 #include <Wire.h>
 
 /* GPIO pinouts */
-#define LED_RED         (12)
-#define LED_BLUE        (11)
-#define LED_GREEN       (10)
-#define LED_YELLOW      (9)
-#define MOTOR_PIN       (8)
+#define LED_RED             (12)
+#define LED_BLUE            (11)
+#define LED_GREEN           (10)
+#define LED_YELLOW          (9)
+#define MOTOR_PIN           (8)
 
 /* i2c device address, must match the definition in common.py */
-#define I2C_DEVICE_ADDR (0x10)
+#define I2C_DEVICE_ADDR     (0x10)
 
 /* Commands, must match the definitions in common.py */
-#define CMD_START       (0x41)  // Spin motors
-#define CMD_STOP        (0x42)  // Turn off motors
-#define CMD_THRUST_POS  (0x43)  // Up
-#define CMD_THRUST_NEG  (0x44)  // Down
-#define CMD_PITCH_POS   (0x45)  // Backward
-#define CMD_PITCH_NEG   (0x46)  // Forward
-#define CMD_ROLL_POS    (0x47)  // Right
-#define CMD_ROLL_NEG    (0x48)  // Left
-#define CMD_YAW_POS     (0x49)  // Spin counter clockwise
-#define CMD_YAW_NEG     (0x4A)  // Spin clockwise
+#define CMD_START           (0x41)  // Spin motors
+#define CMD_STOP            (0x42)  // Turn off motors
+#define CMD_THRUST_POS      (0x43)  // Up
+#define CMD_THRUST_NEG      (0x44)  // Down
+#define CMD_PITCH_POS       (0x45)  // Backward
+#define CMD_PITCH_NEG       (0x46)  // Forward
+#define CMD_ROLL_POS        (0x47)  // Right
+#define CMD_ROLL_NEG        (0x48)  // Left
+#define CMD_YAW_POS         (0x49)  // Spin counter clockwise
+#define CMD_YAW_NEG         (0x4A)  // Spin clockwise
+#define CMD_PITCH_POS_TRIM  (0x4B)  // Trim pitch positively
+#define CMD_PITCH_NEG_TRIM  (0x4C)  // Trim pitch negatively
+#define CMD_ROLL_POS_TRIM   (0x4D)  // Trim roll positively
+#define CMD_ROLL_NEG_TRIM   (0x4E)  // Trim roll negatively
+#define CMD_YAW_POS_TRIM    (0x4F)  // Trim yaw positively
+#define CMD_YAW_NEG_TRIM    (0x50)  // Trim yaw negatively
 
 /* Brightness of an LED when lit, 0-255 */
 unsigned char ledBrightness = 255;
+
+/* Step increase/decrease when changing LED brightness */
+const unsigned char ledStep = 10;
 
 /* Speed of the motor */
 unsigned char motorSpeed = 0;
@@ -108,11 +117,17 @@ recvEvent(int n)
             break;
 
         case CMD_YAW_POS:
-            //cwBlink();
+            allOff();
+            blueOn();
+            greenOn();
+            yellowOn();
             break;
 
         case CMD_YAW_NEG:
-            //ccwBlink();
+            allOff();
+            blueOn();
+            redOn();
+            yellowOn();
             break;
 
         case CMD_THRUST_POS:
@@ -146,6 +161,56 @@ recvEvent(int n)
                 }
                 analogWrite(MOTOR_PIN, motorSpeed);
             }
+            break;
+
+        case CMD_PITCH_POS_TRIM:
+            allOff();
+            yellowOn();
+            delay(50);
+            yellowOff();
+            break;
+
+        case CMD_PITCH_NEG_TRIM:
+            allOff();
+            blueOn();
+            delay(50);
+            blueOff();
+            break;
+
+        case CMD_ROLL_POS_TRIM:
+            allOff();
+            greenOn();
+            delay(50);
+            greenOff();
+            break;
+
+        case CMD_ROLL_NEG_TRIM:
+            allOff();
+            redOn();
+            delay(50);
+            redOff();
+            break;
+
+        case CMD_YAW_POS_TRIM:
+            allOff();
+            blueOn();
+            greenOn();
+            yellowOn();
+            delay(50);
+            blueOff();
+            greenOff();
+            yellowOff();
+            break;
+
+        case CMD_YAW_NEG_TRIM:
+            allOff();
+            blueOn();
+            redOn();
+            yellowOn();
+            delay(50);
+            blueOff();
+            redOff();
+            yellowOff();
             break;
 
         case CMD_STOP:

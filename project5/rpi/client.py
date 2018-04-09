@@ -80,6 +80,27 @@ def rightJoyYCb(value):
     elif value > 0:
         sendCmd(CMD_THRUST_NEG)
 
+# DPAD callback
+def dpadCb(value):
+    if value == (0, 1):     # UP
+        sendCmd(CMD_PITCH_NEG_TRIM)
+    elif value == (0, -1):  # DOWN
+        sendCmd(CMD_PITCH_POS_TRIM)
+    elif value == (1, 0):   # RIGHT
+        sendCmd(CMD_ROLL_POS_TRIM)
+    elif value == (-1, 0):  # LEFT
+        sendCmd(CMD_ROLL_NEG_TRIM)
+
+# X button callback
+def xCb(value):
+    if value == 1:
+        sendCmd(CMD_YAW_NEG_TRIM)
+
+# B button callback
+def bCb(value):
+    if value == 1:
+        sendCmd(CMD_YAW_POS_TRIM)
+
 # Create a controller object and assign callbacks
 xboxCont = XboxController.XboxController(controllerCallBack = None,
                                          joystickNo = 0,
@@ -93,6 +114,9 @@ xboxCont.setupControlCallback(xboxCont.XboxControls.LTHUMBX, leftJoyXCb)
 xboxCont.setupControlCallback(xboxCont.XboxControls.LTHUMBY, leftJoyYCb)
 xboxCont.setupControlCallback(xboxCont.XboxControls.RTHUMBX, rightJoyXCb)
 xboxCont.setupControlCallback(xboxCont.XboxControls.RTHUMBY, rightJoyYCb)
+xboxCont.setupControlCallback(xboxCont.XboxControls.DPAD, dpadCb)
+xboxCont.setupControlCallback(xboxCont.XboxControls.X, xCb)
+xboxCont.setupControlCallback(xboxCont.XboxControls.B, bCb)
 
 try:
     xboxCont.start()
