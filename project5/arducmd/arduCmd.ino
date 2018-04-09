@@ -36,6 +36,20 @@
 #define CMD_YAW_POS_TRIM    (0x4F)  // Trim yaw positively
 #define CMD_YAW_NEG_TRIM    (0x50)  // Trim yaw negatively
 
+#define CMD_MAX             (0x51)  // Set this to +1 of the last command
+
+#define CMD_BUF_LEN         (32)
+#define EXEC_BUF_LEN        (2 * CMD_BUF_LEN)
+
+typedef void (*cmdFunc_t)(void);
+
+cmdFunc_t cmdTable[CMD_MAX];
+
+unsigned char cmdBuf[CMD_BUF_LEN];
+unsigned char execBuf[EXEC_BUF_LEN];
+size_t cmdBufIdx;
+size_t execBufIdx;
+
 /* Brightness of an LED when lit, 0-255 */
 unsigned char ledBrightness = 255;
 
@@ -58,6 +72,7 @@ void greenOff(void){    digitalWrite(LED_GREEN, LOW); }
 void yellowOn(void){    digitalWrite(LED_YELLOW, ledBrightness); }
 void yellowOff(void){   digitalWrite(LED_YELLOW, LOW); }
 
+
 void
 allOn(void)
 {
@@ -66,6 +81,7 @@ allOn(void)
     greenOn();
     yellowOn();
 }
+
 
 void
 allOff(void)
@@ -76,149 +92,240 @@ allOff(void)
     yellowOff();
 }
 
+
+void
+funcCmdStart(void)
+{
+    allOn();
+}
+
+
+void
+funcCmdStop(void)
+{
+    allOff();
+}
+
+
+void
+funcCmdThrustPos(void)
+{
+    if (motorSpeed < 0xFF)
+    {
+        // prevent wrapping
+        if ((unsigned char) (motorSpeed + motorStep) < motorSpeed)
+        {
+            motorSpeed = 0xFF;
+        }
+        else
+        {
+            motorSpeed += motorStep;
+        }
+
+        analogWrite(MOTOR_PIN, motorSpeed);
+    }
+}
+
+
+void
+funcCmdThrustNeg(void)
+{
+    if (motorSpeed)
+    {
+        // prevent wrapping
+        if ((unsigned char) (motorSpeed - motorStep) > motorSpeed)
+        {
+            motorSpeed = 0;
+        }
+        else
+        {
+            motorSpeed -= motorStep;
+        }
+        analogWrite(MOTOR_PIN, motorSpeed);
+    }
+
+}
+
+
+void
+funcCmdPitchPos(void)
+{
+    allOff();
+    yellowOn();
+}
+
+
+void
+funcCmdPitchNeg(void)
+{
+    allOff();
+    blueOn();
+}
+
+
+void
+funcCmdRollPos(void)
+{
+    allOff();
+    greenOn();
+}
+
+
+void
+funcCmdRollNeg(void)
+{
+    allOff();
+    redOn();
+}
+
+
+void
+funcCmdYawPos(void)
+{
+    allOff();
+    blueOn();
+    greenOn();
+    yellowOn();
+}
+
+
+void
+funcCmdYawNeg(void)
+{
+    allOff();
+    blueOn();
+    redOn();
+    yellowOn();
+}
+
+
+void
+funcCmdPitchPosTrim(void)
+{
+    allOff();
+    yellowOn();
+    delay(50);
+    yellowOff();
+}
+
+
+void
+funcCmdPitchNegTrim(void)
+{
+    allOff();
+    blueOn();
+    delay(50);
+    blueOff();
+}
+
+
+void
+funcCmdRollPosTrim(void)
+{
+    allOff();
+    greenOn();
+    delay(50);
+    greenOff();
+}
+
+
+void
+funcCmdRollNegTrim(void)
+{
+    allOff();
+    redOn();
+    delay(50);
+    redOff();
+}
+
+
+void
+funcCmdYawPosTrim(void)
+{
+    allOff();
+    blueOn();
+    greenOn();
+    yellowOn();
+    delay(50);
+    blueOff();
+    greenOff();
+    yellowOff();
+}
+
+
+void
+funcCmdYawNegTrim(void)
+{
+    allOff();
+    blueOn();
+    redOn();
+    yellowOn();
+    delay(50);
+    blueOff();
+    redOff();
+    yellowOff();
+}
+
+
 /*  recvEvent
  *  n   Number of bytes read from the master device
  *
- *  Receives an event from the i2c master device and executes it.
+ *  Receives an event from the i2c master device and writes it to the command
+ *  buffer.
  */
 void
 recvEvent(int n)
 {
     unsigned char x = 0;
+
+    n = n;  // get rid of the warning
+
     while (Wire.available())
     {
         x = Wire.read();
-        Serial.println(x);
-
-        switch (x)
+        if (cmdBufIdx < CMD_BUF_LEN)
         {
-        case CMD_START:
-            allOn();
-            break;
-
-        case CMD_PITCH_NEG:
-            allOff();
-            blueOn();
-            break;
-
-        case CMD_PITCH_POS:
-            allOff();
-            yellowOn();
-            break;
-
-        case CMD_ROLL_NEG:
-            allOff();
-            redOn();
-            break;
-
-        case CMD_ROLL_POS:
-            allOff();
-            greenOn();
-            break;
-
-        case CMD_YAW_POS:
-            allOff();
-            blueOn();
-            greenOn();
-            yellowOn();
-            break;
-
-        case CMD_YAW_NEG:
-            allOff();
-            blueOn();
-            redOn();
-            yellowOn();
-            break;
-
-        case CMD_THRUST_POS:
-            if (motorSpeed < 0xFF)
-            {
-                // prevent wrapping
-                if ((unsigned char) (motorSpeed + motorStep) < motorSpeed)
-                {
-                    motorSpeed = 0xFF;
-                }
-                else
-                {
-                    motorSpeed += motorStep;
-                }
-
-                analogWrite(MOTOR_PIN, motorSpeed);
-            }
-            break;
-
-        case CMD_THRUST_NEG:
-            if (motorSpeed)
-            {
-                // prevent wrapping
-                if ((unsigned char) (motorSpeed - motorStep) > motorSpeed)
-                {
-                    motorSpeed = 0;
-                }
-                else
-                {
-                    motorSpeed -= motorStep;
-                }
-                analogWrite(MOTOR_PIN, motorSpeed);
-            }
-            break;
-
-        case CMD_PITCH_POS_TRIM:
-            allOff();
-            yellowOn();
-            delay(50);
-            yellowOff();
-            break;
-
-        case CMD_PITCH_NEG_TRIM:
-            allOff();
-            blueOn();
-            delay(50);
-            blueOff();
-            break;
-
-        case CMD_ROLL_POS_TRIM:
-            allOff();
-            greenOn();
-            delay(50);
-            greenOff();
-            break;
-
-        case CMD_ROLL_NEG_TRIM:
-            allOff();
-            redOn();
-            delay(50);
-            redOff();
-            break;
-
-        case CMD_YAW_POS_TRIM:
-            allOff();
-            blueOn();
-            greenOn();
-            yellowOn();
-            delay(50);
-            blueOff();
-            greenOff();
-            yellowOff();
-            break;
-
-        case CMD_YAW_NEG_TRIM:
-            allOff();
-            blueOn();
-            redOn();
-            yellowOn();
-            delay(50);
-            blueOff();
-            redOff();
-            yellowOff();
-            break;
-
-        case CMD_STOP:
-        default:
-            allOff();
-            break;
+            cmdBuf[cmdBufIdx++] = x;
+        }
+        else
+        {
+            // Ideally this is never printed, in testing I haven't seen it yet!
+            Serial.println("X");
         }
     }
+}
+
+
+/*  setupCmdTable
+ *
+ *  Sets up the command table with command handlers.
+ */
+void
+setupCmdTable(void)
+{
+    size_t i = 0;
+
+    for (i = 0; i < sizeof(cmdTable) / sizeof(cmdTable[0]); i++)
+    {
+        cmdTable[i] = NULL;
+    }
+
+    cmdTable[CMD_START] = funcCmdStart;
+    cmdTable[CMD_STOP] = funcCmdStop;
+    cmdTable[CMD_THRUST_POS] = funcCmdThrustPos;
+    cmdTable[CMD_THRUST_NEG] = funcCmdThrustNeg;
+    cmdTable[CMD_PITCH_POS] = funcCmdPitchPos;
+    cmdTable[CMD_PITCH_NEG] = funcCmdPitchNeg;
+    cmdTable[CMD_ROLL_POS] = funcCmdRollPos;
+    cmdTable[CMD_ROLL_NEG] = funcCmdRollNeg;
+    cmdTable[CMD_YAW_POS] = funcCmdYawPos;
+    cmdTable[CMD_YAW_NEG] = funcCmdYawNeg;
+    cmdTable[CMD_PITCH_POS_TRIM] = funcCmdPitchPosTrim;
+    cmdTable[CMD_PITCH_NEG_TRIM] = funcCmdPitchNegTrim;
+    cmdTable[CMD_ROLL_POS_TRIM] = funcCmdRollPosTrim;
+    cmdTable[CMD_ROLL_NEG_TRIM] = funcCmdRollNegTrim;
+    cmdTable[CMD_YAW_POS_TRIM] = funcCmdYawPosTrim;
+    cmdTable[CMD_YAW_NEG_TRIM] = funcCmdYawNegTrim;
 }
 
 
@@ -238,6 +345,44 @@ setup(void)
     pinMode(LED_GREEN, OUTPUT);
     pinMode(LED_YELLOW, OUTPUT);
     pinMode(MOTOR_PIN, OUTPUT);
+    memset(cmdBuf, 0, sizeof(cmdBuf));
+    memset(execBuf, 0, sizeof(execBuf));
+    cmdBufIdx = 0;
+    execBufIdx = 0;
+    setupCmdTable();
+}
+
+
+/*  execCmds
+ *
+ *  Executes commands from the execute buffer.
+ *
+ *  This solves the shared data problem by having separate buffers. One buffer
+ *  has received commands written to it in an interrupt context and we copy out
+ *  of that buffer only when interrupts are disabled. We then executed commands
+ *  from this copy so that we never "write to" or "execute from" at the same
+ *  time.
+ */
+void
+execCmds(void)
+{
+    size_t i = 0;
+
+    // Execute the minimum number of commands to free the exec buffer for a full
+    // cmd buffer
+    for (i = 0; i < CMD_BUF_LEN; i++)
+    {
+        if (execBuf[i] == 0)
+        {
+            break;
+        }
+
+        cmdTable[execBuf[i]]();
+    }
+
+    // Slide off executed commands
+    memmove(execBuf, execBuf + i, i);
+    execBufIdx -= i;
 }
 
 
@@ -248,6 +393,21 @@ setup(void)
 void
 loop(void)
 {
-    delay(100);
+    noInterrupts();
+    // If new commands exist and we have room for them in the execute buffer
+    if (cmdBufIdx &&
+        ((EXEC_BUF_LEN - execBufIdx) >= cmdBufIdx))
+    {
+        // Copy new commands to the end of the execute buffer
+        memcpy(execBuf + execBufIdx, cmdBuf, cmdBufIdx * sizeof(execBuf[0]));
+        execBufIdx += cmdBufIdx;
+        cmdBufIdx = 0;
+    }
+    interrupts();
+
+    if (execBufIdx)
+    {
+        execCmds();
+    }
 }
 
