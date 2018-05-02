@@ -5,6 +5,11 @@
 #
 # Common definitions for Python scripts
 ################################################################################
+import struct
+
+# (un)Packers for sending data over the network
+statPack = struct.Struct('B')
+cmdPack = struct.Struct('B')
 
 # i2c information
 I2C_DEVICE_BUS  = 1

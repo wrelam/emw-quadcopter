@@ -7,7 +7,6 @@
 #
 ################################################################################
 import socket
-import struct
 import sys
 import time
 
@@ -26,9 +25,13 @@ sock.connect(servAddr)
 # Send a command to the server
 def sendCmd(cmd):
     print("Sending cmd: " + strCmd(cmd))
-    packer = struct.Struct('B')
-    data = packer.pack(cmd)
-    sock.sendall(data)
+    data = cmdPack.pack(cmd)
+    try:
+        sock.sendall(data)
+    except:
+        # Don't raise an error if we failed to send, it's UDP anyways
+        pass
+
 
 # Generic callback, useful for debugging XBox controller
 def genCb(controlId, value):
