@@ -2,13 +2,11 @@
  *
  * arduCmd.ino
  *
- * Arduino code for receiving commands over the i2c bus and executing the
- * commands by lighting various LEDs or spinning a motor up/down.
- *
+ * Arduino code to utilize an ESP8266 WiFi module to receiving commands and
+ * display an HTTP status page. Uses an LED array and motor to simulate the
+ * commands being executed.
 *******************************************************************************/
-#include <string.h>
 #include <SoftwareSerial.h>
-#include <Wire.h>
 
 /* GPIO pinouts */
 #define LED_RED             (12)
@@ -18,9 +16,6 @@
 #define MOTOR_PIN           (8)
 #define WIFI_TX             (3)
 #define WIFI_RX             (2)
-
-/* i2c device address, must match the definition in common.py */
-#define I2C_DEVICE_ADDR     (0x10)
 
 /* Commands, must match the definitions in common.py */
 #define CMD_MIN             (0x40)  // -1 of the first command
@@ -56,7 +51,7 @@ unsigned char execBuf[EXEC_BUF_LEN];
 size_t cmdBufIdx;
 size_t execBufIdx;
 
-/* Brightness of an LED when lit, 0-255 */
+/* Roll/Pitch/Yaw values and steps */
 unsigned char rollPwm = 255;
 unsigned char rollStep = 10;
 unsigned char pitchPwm = 255;
@@ -64,11 +59,8 @@ unsigned char pitchStep = 10;
 unsigned char yawPwm = 255;
 unsigned char yawStep = 10;
 
-/* Step increase/decrease when changing LED brightness */
-const unsigned char ledStep = 51;
-
 /* Speed of the motor */
-unsigned char motorSpeed = 0;
+unsigned char motorPwm = 0;
 
 /* Step increase/decrease when changing motor speed */
 const unsigned char motorStep = 10;
@@ -87,6 +79,18 @@ void greenOff(void){    analogWrite(LED_GREEN, 0); }
 void yellowOn(void){    analogWrite(LED_YELLOW, 255); }
 void yellowOff(void){   analogWrite(LED_YELLOW, 0); }
 
+#if 0
+/*******************************************************************************
+    strCmd
+*//**
+    @brief  Returns the string corresponding to a command value
+    @param  cmd Command to be translated
+
+    Useful for debugging.
+
+    @return String representation of a command
+    @retval "<unknown cmd>" Command is unknown
+*******************************************************************************/
 const char *
 strCmd(int cmd)
 {
@@ -113,6 +117,7 @@ strCmd(int cmd)
 
     return "<unknown cmd>";
 }
+#endif
 
 
 void
@@ -152,19 +157,19 @@ funcCmdStop(void)
 void
 funcCmdThrustPos(void)
 {
-    if (motorSpeed < 0xFF)
+    if (motorPwm < 0xFF)
     {
         // prevent wrapping
-        if ((unsigned char) (motorSpeed + motorStep) < motorSpeed)
+        if ((unsigned char) (motorPwm + motorStep) < motorPwm)
         {
-            motorSpeed = 0xFF;
+            motorPwm = 0xFF;
         }
         else
         {
-            motorSpeed += motorStep;
+            motorPwm += motorStep;
         }
 
-        analogWrite(MOTOR_PIN, motorSpeed);
+        analogWrite(MOTOR_PIN, motorPwm);
     }
 }
 
@@ -172,18 +177,18 @@ funcCmdThrustPos(void)
 void
 funcCmdThrustNeg(void)
 {
-    if (motorSpeed)
+    if (motorPwm)
     {
         // prevent wrapping
-        if ((unsigned char) (motorSpeed - motorStep) > motorSpeed)
+        if ((unsigned char) (motorPwm - motorStep) > motorPwm)
         {
-            motorSpeed = 0;
+            motorPwm = 0;
         }
         else
         {
-            motorSpeed -= motorStep;
+            motorPwm -= motorStep;
         }
-        analogWrite(MOTOR_PIN, motorSpeed);
+        analogWrite(MOTOR_PIN, motorPwm);
     }
 }
 
@@ -257,6 +262,8 @@ funcCmdPitchPosTrim(void)
             pitchPwm += pitchStep;
         }
     }
+    delay(50);
+    yellowOff();
 }
 
 
@@ -277,6 +284,7 @@ funcCmdPitchNegTrim(void)
             pitchPwm -= pitchStep;
         }
     }
+    delay(50);
     blueOff();
 }
 
@@ -298,6 +306,7 @@ funcCmdRollPosTrim(void)
             rollPwm += rollStep;
         }
     }
+    delay(50);
     greenOff();
 }
 
@@ -319,6 +328,7 @@ funcCmdRollNegTrim(void)
             rollPwm -= rollStep;
         }
     }
+    delay(50);
     redOff();
 }
 
@@ -342,6 +352,7 @@ funcCmdYawPosTrim(void)
             yawPwm += yawStep;
         }
     }
+    delay(50);
     blueOff();
     greenOff();
     yellowOff();
@@ -367,38 +378,10 @@ funcCmdYawNegTrim(void)
             yawPwm -= yawStep;
         }
     }
+    delay(50);
     blueOff();
     redOff();
     yellowOff();
-}
-
-
-/*  recvEvent
- *  n   Number of bytes read from the master device
- *
- *  Receives an event from the i2c master device and writes it to the command
- *  buffer.
- */
-void
-recvEvent(int n)
-{
-    unsigned char x = 0;
-
-    n = n;  // get rid of the warning
-
-    while (Wire.available())
-    {
-        x = Wire.read();
-        if (cmdBufIdx < CMD_BUF_LEN)
-        {
-            cmdBuf[cmdBufIdx++] = x;
-        }
-        else
-        {
-            // Ideally this is never printed, in testing I haven't seen it yet!
-            Serial.println("X");
-        }
-    }
 }
 
 
@@ -435,6 +418,18 @@ setupCmdTable(void)
 }
 
 
+/*******************************************************************************
+    sendToWifi
+*//**
+    @brief  Sends a command to the WiFi module
+    @param  cmd     Command string to be sent
+    @param  timeout # of milliseconds to wait for a response
+    @param  debug   To print debug information or not
+
+    @return Success indication
+    @retval 0   Success
+    @retval -1  Error
+*******************************************************************************/
 int
 sendToWifi(String cmd, const unsigned int timeout, boolean debug)
 {
@@ -449,7 +444,7 @@ sendToWifi(String cmd, const unsigned int timeout, boolean debug)
     }
 
     esp.println(cmd);
-    delay(100);
+    delay(50);
 
     time = millis();
     while ((time + timeout) > millis())
@@ -480,7 +475,7 @@ done_reading:
 
     if ( strstr(response.c_str(), "busy"))
     {
-        delay(500);
+        delay(100);
     }
 
     if ( strstr(response.c_str(), "ERROR"))
@@ -488,7 +483,6 @@ done_reading:
         Serial.println("Command failed\n");
         return -1;
     }
-
 
     return 0;
 }
@@ -509,8 +503,6 @@ execCmds(void)
 {
     size_t i = 0;
 
-    //Serial.println("Executing");
-
     // Execute the minimum number of commands to free the exec buffer for a full
     // cmd buffer
     for (i = 0; i < CMD_BUF_LEN; i++)
@@ -523,159 +515,10 @@ execCmds(void)
         cmdTable[execBuf[i]]();
     }
 
-    // Slide off executed commands
-    //memmove(execBuf, execBuf + i, i);
+    // Slide off executed commands, scrub the rest
     memmove(execBuf, execBuf + i, sizeof(execBuf) - i);
     execBufIdx -= i;
     memset(execBuf + execBufIdx, 0, sizeof(execBuf) - execBufIdx);
-}
-
-#if 0
-void
-handleConnections(void)
-{
-    //int res = -1;
-    String response = "";
-    bool stop = false;
-    unsigned char msgBuf[BUFSIZ] = { 0 };
-
-    //esp.println("AT+IPD,0,50");
-    readUntil(msgBuf, sizeof(msgBuf), '\n');
-    while (!stop)
-    {
-        while (esp.available())
-        {
-            char c = esp.read();
-            response += c;
-            if ('\n' == c)
-            {
-                stop = true;
-            }
-        }
-    }
-
-    //if ( strlen(response.c_str()) &&
-         //!strstr(response.c_str(), "ERROR"))
-    {
-        Serial.println("Received:");
-        Serial.println(response);
-    }
-}
-
-uint64_t
-parseDecimal(char *buf, size_t buflen, int stopchar)
-{
-    uint64_t num = 0;
-    char numBuf[50] = { 0 };
-    size_t nIdx = 0;
-    size_t i = 0;
-    uint32_t multiplier = 0;
-    char c = 0;
-
-    Serial.println("Parsing decimal");
-    return 0;
-
-    /* Read chars into buffer */
-    c = esp.read();
-    while (c != stopchar)
-    {
-        Serial.print("Read: ");
-        Serial.println(c);
-        numBuf[nIdx++] = c;
-        c = esp.read();
-    }
-
-    multiplier = pow(10, strlen(numBuf) - 1);
-    for (i = 0; i < nIdx; i++)
-    {
-        num += multiplier * (numBuf[i] - '0');
-        multiplier /= 10;
-    }
-
-    return num;
-}
-
-
-void
-parseRequest(
-    char *buf,
-    size_t buflen,
-    int *pId,
-    size_t *pLen,
-    uint32_t *pIp,
-    uint16_t *pPort,
-    char *req,
-    size_t reqLen,
-    char *name,
-    size_t nameLen)
-{
-    size_t i = 0;
-    Serial.println("Parsing request");
-
-    if (!pId || !pLen || !pIp || !req || !name)
-    {
-        Serial.println("Bad pointer");
-        return;
-    }
-
-    *pId = parseDecimal(',');
-
-    *pLen = parseDecimal(',');
-
-    *pIp = parseDecimal('.');
-    *pIp <<= 24;
-    *pIp |= parseDecimal('.');
-    *pIp <<= 16;
-    *pIp |= parseDecimal('.');
-    *pIp <<= 8;
-    *pIp |= parseDecimal(',');
-
-    *pPort = parseDecimal(':');
-
-        //readUntil((unsigned char *) req, reqLen, ' ');
-        //readUntil((unsigned char *) name, nameLen, ' ');
-    }
-}
-#endif
-
-int
-readUntil(unsigned char *buf, size_t buflen, int stopchar)
-{
-    unsigned char ch = 0;
-    int res = -1;
-
-    if (!buf || (buflen <= 1))
-    {
-        return res;
-    }
-
-    while (1)
-    {
-        if (0 == buflen)
-        {
-            res = -1;
-            break;
-        }
-
-        ch = esp.read();
-        *buf++ = ch;
-        buflen--;
-
-        if (ch == stopchar)
-        {
-            if (buflen)
-            {
-                *buf = '\0';
-            }
-            else
-            {
-                *--buf = '\0';
-            }
-            break;
-        }
-    }
-
-    return res;
 }
 
 
@@ -688,11 +531,10 @@ void
 setup(void)
 {
     Serial.begin(9600);
-    //esp.begin(115200);
-    //esp.println("AT+UART_DEF=9600,8,1,0,0");
-    esp.begin(9600);
-    //sendToWifi("AT+RST", responseTime, true);
-    delay(1000);
+    esp.begin(115200);
+    //esp.println("AT+UART_DEF=9600,8,1,0,0");  // Change baud rate
+    //sendToWifi("AT+RST", responseTime, true); // Reset module
+    delay(100);
     pinMode(LED_RED, OUTPUT);
     pinMode(LED_BLUE, OUTPUT);
     pinMode(LED_GREEN, OUTPUT);
@@ -706,6 +548,8 @@ setup(void)
 
     // "Prime" the AT commands to get the errors out of the way
     sendToWifi("AT", responseTime, true);
+
+    // Don't echo back the commands we send
     sendToWifi("ATE0", responseTime, true);
 
     // Set to access point mode
@@ -726,7 +570,7 @@ setup(void)
                responseTime,
                true);
 
-    // Display IP/MAC
+    // Display IP/MAC address
     sendToWifi("AT+CIFSR", responseTime, true);
 
     // Allow multiple connections, required for servers
@@ -738,10 +582,16 @@ setup(void)
     // Start server listening on TCP port 80
     sendToWifi("AT+CIPSERVER=1,80", responseTime, true);
 
-    // Close any stale connections
+    // Close any existing connections (5 means close all)
     sendToWifi("AT+CIPCLOSE=5", responseTime, true);
 
     // Start a UDP connection for commands
+    // Link ID: 1   (so we know when *not* to response with a web page)
+    // Type: UDP
+    // Remote IP: 0.0.0.0
+    // Remote Port: 0
+    // Local port: 5000
+    // Mode: Destination may change (2)
     sendToWifi("AT+CIPSTART=1,\"UDP\",\"0.0.0.0\",0,5000,2", responseTime, true);
 
     Serial.println("Wifi connection running!");
@@ -750,7 +600,7 @@ setup(void)
 
 /*  loop
  *
- *  Delays briefly.
+ *  Looks for commands/requests over WiFi and then responds to or executes them.
  */
 void
 loop(void)
@@ -760,15 +610,19 @@ loop(void)
     {
         if (esp.find((char *) "+IPD,"))
         {
-            delay(35);
+            // Delay slightly to allow the serial buffer to fill
+            delay(50);
             int id = esp.read() - '0';
 
+            /* Connection ID 0 indicates an HTTP request, respond with the
+             * status page regardless of what page was actually requested.
+             */
             if (0 == id)
             {
                 Serial.println("Responding to web request");
                 String page = "<html><h1>Quadcopter Status</h1>";
-                page += "</br>Motor Speed: ";
-                page += motorSpeed;
+                page += "</br>Motor PWM: ";
+                page += motorPwm;
                 page += "</br>Roll PWM: ";
                 page += rollPwm;
                 page += "</br>Pitch PWM: ";
@@ -791,6 +645,7 @@ loop(void)
                 sendToWifi(page, responseTime, false);
                 sendToWifi(clos, responseTime, false);
             }
+            /* Otherwise this is a command so add it to the buffer */
             else
             {
                 esp.find((char *) ":");
@@ -805,7 +660,8 @@ loop(void)
         }
     }
 
-    // If new commands exist and we have room for them in the execute buffer
+    // If new commands exist and we have room for them in the execute buffer,
+    // add them
     noInterrupts();
     if (cmdBufIdx &&
         ((EXEC_BUF_LEN - execBufIdx) >= cmdBufIdx))
